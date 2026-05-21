@@ -109,11 +109,21 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist
-          Copy-Item build\Release\BeatSaberBridgeAPI.exe   dist\
-          Copy-Item build\Release\discord_partner_sdk.dll  dist\
-          Copy-Item build\Release\libssl-3-x64.dll         dist\
-          Copy-Item build\Release\libcrypto-3-x64.dll      dist\
-          Copy-Item build\Release\zip.dll                  dist\
+          Copy-Item build\Release\BeatSaberBridgeAPI.exe  dist\
+
+          # Copy all runtime DLLs deployed by the build (includes vcpkg transitive deps)
+          Get-ChildItem build\Release\*.dll | Copy-Item -Destination dist\ -ErrorAction Stop
+
+          # Verify each required DLL is present — fails loudly if any is missing
+          foreach ($name in @('discord_partner_sdk.dll', 'zip.dll')) {
+            if (-not (Test-Path dist\$name)) { throw "Required DLL missing from dist\: $name" }
+          }
+          foreach ($pattern in @('libssl*.dll', 'libcrypto*.dll')) {
+            if (-not (Get-Item dist\$pattern -ErrorAction SilentlyContinue)) {
+              throw "Required DLL missing from dist\: $pattern"
+            }
+          }
+
           .\dist\BeatSaberBridgeAPI.exe --self-test
           Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 
