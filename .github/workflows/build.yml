@@ -30,6 +30,10 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Cache compiled vcpkg packages in GitHub Actions cache across runs.
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +73,17 @@ jobs:
         run: |
           bash scripts/setup-sdk.sh
 
+      - name: Set up sccache
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Cache FetchContent dependencies
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: .deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
         run: sudo apt-get install -y --no-install-recommends libpulse0 libzip-dev
@@ -90,13 +105,18 @@ jobs:
         shell: bash
         run: |
           mkdir build && cd build
+          cmake_args=(
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -DFETCHCONTENT_BASE_DIR="$(pwd)/../.deps"
+            -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
+          )
           if [ "$RUNNER_OS" = "Windows" ]; then
-            cmake .. -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+            cmake_args+=(-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            cmake .. -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)"
-          else
-            cmake ..
+            cmake_args+=(-DOPENSSL_ROOT_DIR="$(brew --prefix openssl)")
           fi
+          cmake .. "${cmake_args[@]}"
 
       - name: Build
         if: steps.cache-build.outputs.cache-hit != 'true'
