@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .deps
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          key: fetchcontent-ninja-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
