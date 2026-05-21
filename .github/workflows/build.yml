@@ -104,7 +104,7 @@ jobs:
         if: steps.cache-build.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          mkdir build && cd build
+          rm -rf build && mkdir build && cd build
           cmake_args=(
             -DCMAKE_C_COMPILER_LAUNCHER=sccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
