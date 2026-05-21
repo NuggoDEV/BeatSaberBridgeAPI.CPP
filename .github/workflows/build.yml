@@ -204,6 +204,20 @@ jobs:
           mkdir dist
           cp build/BeatSaberBridgeAPI         dist/
           cp build/libdiscord_partner_sdk.so  dist/
+
+          # Bundle the non-universal runtime deps (ssl, crypto, zip) so the
+          # release works on distros that don't have OpenSSL 3 or libzip 4
+          # pre-installed. RPATH is already $ORIGIN so no patching needed.
+          LIBSSL_SRC=$(ldd    build/BeatSaberBridgeAPI | awk '/libssl/{print $3;    exit}')
+          LIBCRYPTO_SRC=$(ldd build/BeatSaberBridgeAPI | awk '/libcrypto/{print $3; exit}')
+          LIBZIP_SRC=$(ldd    build/BeatSaberBridgeAPI | awk '/libzip/{print $3;    exit}')
+          [ -n "$LIBSSL_SRC" ]    || { echo 'libssl not found in ldd output';   exit 1; }
+          [ -n "$LIBCRYPTO_SRC" ] || { echo 'libcrypto not found in ldd output'; exit 1; }
+          [ -n "$LIBZIP_SRC" ]    || { echo 'libzip not found in ldd output';    exit 1; }
+          cp "$LIBSSL_SRC"    "dist/$(basename "$LIBSSL_SRC")"
+          cp "$LIBCRYPTO_SRC" "dist/$(basename "$LIBCRYPTO_SRC")"
+          cp "$LIBZIP_SRC"    "dist/$(basename "$LIBZIP_SRC")"
+
           dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-linux.zip *
 
