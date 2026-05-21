@@ -218,6 +218,28 @@ jobs:
           cp "$LIBCRYPTO_SRC" "dist/$(basename "$LIBCRYPTO_SRC")"
           cp "$LIBZIP_SRC"    "dist/$(basename "$LIBZIP_SRC")"
 
+          echo '=== Dist contents ==='
+          find dist -maxdepth 1 -type f | sort | \
+            while IFS= read -r f; do printf '  %-55s %10d bytes\n' "$f" "$(stat -c%s "$f")"; done
+          echo ''
+          dist_required=(
+            BeatSaberBridgeAPI
+            libdiscord_partner_sdk.so
+            "$(basename "$LIBSSL_SRC")"
+            "$(basename "$LIBCRYPTO_SRC")"
+            "$(basename "$LIBZIP_SRC")"
+          )
+          dist_missing=()
+          echo '=== Checking dist files ==='
+          for f in "${dist_required[@]}"; do
+            if [ -f "dist/$f" ]; then echo "  [OK]      $f"
+            else                      echo "  [MISSING] $f"; dist_missing+=("$f")
+            fi
+          done
+          [ "${#dist_missing[@]}" -eq 0 ] || \
+            { echo "Required dist files not found: ${dist_missing[*]}"; exit 1; }
+          echo ''
+
           dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-linux.zip *
 
@@ -281,6 +303,28 @@ jobs:
           LIBZIP_CRYPTO_REF=$(otool -L "dist/$LIBZIP_NAME" | awk '/libcrypto/{print $1; exit}')
           [ -n "$LIBZIP_CRYPTO_REF" ] && \
             install_name_tool -change "$LIBZIP_CRYPTO_REF" "@executable_path/$LIBCRYPTO_NAME" "dist/$LIBZIP_NAME"
+
+          echo '=== Dist contents ==='
+          find dist -maxdepth 1 -type f | sort | \
+            while IFS= read -r f; do printf '  %-55s %10d bytes\n' "$f" "$(stat -f%z "$f")"; done
+          echo ''
+          dist_required=(
+            BeatSaberBridgeAPI
+            libdiscord_partner_sdk.dylib
+            "$LIBSSL_NAME"
+            "$LIBCRYPTO_NAME"
+            "$LIBZIP_NAME"
+          )
+          dist_missing=()
+          echo '=== Checking dist files ==='
+          for f in "${dist_required[@]}"; do
+            if [ -f "dist/$f" ]; then echo "  [OK]      $f"
+            else                      echo "  [MISSING] $f"; dist_missing+=("$f")
+            fi
+          done
+          [ "${#dist_missing[@]}" -eq 0 ] || \
+            { echo "Required dist files not found: ${dist_missing[*]}"; exit 1; }
+          echo ''
 
           dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-macos.zip *
