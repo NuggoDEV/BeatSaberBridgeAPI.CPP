@@ -118,7 +118,8 @@ if(WIN32)
         endif()
         file(GLOB _vcpkg_deploy_dlls
             "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/zip.dll"
-            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/zlib1.dll"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/z.dll"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/bz2.dll"
         )
     endif()
 

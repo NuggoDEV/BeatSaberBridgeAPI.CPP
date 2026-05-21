@@ -137,7 +137,8 @@ jobs:
             'BeatSaberBridgeAPI.exe'  = $false
             'discord_partner_sdk.dll' = $false
             'zip.dll'                 = $false
-            'zlib1.dll'               = $false
+            'z.dll'                   = $false
+            'bz2.dll'                 = $false
             'libssl*.dll'             = $true
             'libcrypto*.dll'          = $true
           }
