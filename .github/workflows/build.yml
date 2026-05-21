@@ -79,7 +79,7 @@ jobs:
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows' && steps.cache-build.outputs.cache-hit != 'true'
-        run: vcpkg install libzip:x64-windows
+        run: vcpkg install libzip:x64-windows openssl:x64-windows
 
       - name: Set up CMake
         if: steps.cache-build.outputs.cache-hit != 'true'
