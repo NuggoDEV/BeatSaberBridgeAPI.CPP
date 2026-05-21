@@ -104,50 +104,68 @@ jobs:
           cd build
           cmake --build . --config Release
 
-      - name: Self-test
-        if: steps.cache-build.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          TEST_DIR=$(mktemp -d)
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cp build/Release/BeatSaberBridgeAPI.exe "$TEST_DIR/"
-            cp build/Release/*.dll "$TEST_DIR/"
-            "$TEST_DIR/BeatSaberBridgeAPI.exe" --self-test
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            cp build/BeatSaberBridgeAPI "$TEST_DIR/"
-            cp build/libdiscord_partner_sdk.dylib "$TEST_DIR/"
-            "$TEST_DIR/BeatSaberBridgeAPI" --self-test
-          else
-            cp build/BeatSaberBridgeAPI "$TEST_DIR/"
-            cp build/libdiscord_partner_sdk.so "$TEST_DIR/"
-            "$TEST_DIR/BeatSaberBridgeAPI" --self-test
-          fi
-
-      - name: Prepare Windows build
+      - name: Package and self-test Windows build
         if: runner.os == 'Windows' && steps.cache-build.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist
-          Copy-Item build/Release/BeatSaberBridgeAPI.exe dist/
-          Copy-Item build/Release/discord_partner_sdk.dll dist/
-          Compress-Archive -Path dist/* -DestinationPath BeatSaberBridgeAPI-windows.zip
+          Copy-Item build\Release\BeatSaberBridgeAPI.exe   dist\
+          Copy-Item build\Release\discord_partner_sdk.dll  dist\
+          Copy-Item build\Release\libssl-3-x64.dll         dist\
+          Copy-Item build\Release\libcrypto-3-x64.dll      dist\
+          Copy-Item build\Release\zip.dll                  dist\
+          .\dist\BeatSaberBridgeAPI.exe --self-test
+          Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 
-      - name: Prepare Linux build
+      - name: Package and self-test Linux build
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          set -euo pipefail
           mkdir dist
-          cp build/BeatSaberBridgeAPI dist/
-          cp build/libdiscord_partner_sdk.so dist/
+          cp build/BeatSaberBridgeAPI         dist/
+          cp build/libdiscord_partner_sdk.so  dist/
+          dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-linux.zip *
 
-      - name: Prepare macOS build
+      - name: Package and self-test macOS build
         if: runner.os == 'macOS' && steps.cache-build.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          set -euo pipefail
           mkdir dist
-          cp build/BeatSaberBridgeAPI dist/
-          cp build/libdiscord_partner_sdk.dylib dist/
+          cp build/BeatSaberBridgeAPI                dist/
+          cp build/libdiscord_partner_sdk.dylib       dist/
+
+          # Detect the exact paths the linker recorded (version-agnostic)
+          LIBSSL_SRC=$(otool -L build/BeatSaberBridgeAPI | awk '/libssl/{print $1; exit}')
+          LIBCRYPTO_SRC=$(otool -L build/BeatSaberBridgeAPI | awk '/libcrypto/{print $1; exit}')
+          LIBZIP_SRC=$(otool -L build/BeatSaberBridgeAPI | awk '/libzip/{print $1; exit}')
+
+          LIBSSL_NAME=$(basename "$LIBSSL_SRC")
+          LIBCRYPTO_NAME=$(basename "$LIBCRYPTO_SRC")
+          LIBZIP_NAME=$(basename "$LIBZIP_SRC")
+
+          cp "$LIBSSL_SRC"    "dist/$LIBSSL_NAME"
+          cp "$LIBCRYPTO_SRC" "dist/$LIBCRYPTO_NAME"
+          cp "$LIBZIP_SRC"    "dist/$LIBZIP_NAME"
+
+          # Rewrite the binary's LC_LOAD_DYLIB entries to use @executable_path
+          install_name_tool -change "$LIBSSL_SRC"    "@executable_path/$LIBSSL_NAME"    dist/BeatSaberBridgeAPI
+          install_name_tool -change "$LIBCRYPTO_SRC" "@executable_path/$LIBCRYPTO_NAME" dist/BeatSaberBridgeAPI
+          install_name_tool -change "$LIBZIP_SRC"    "@executable_path/$LIBZIP_NAME"    dist/BeatSaberBridgeAPI
+
+          # Fix libssl's internal reference to libcrypto
+          LIBSSL_CRYPTO_REF=$(otool -L "dist/$LIBSSL_NAME" | awk '/libcrypto/{print $1; exit}')
+          install_name_tool -change "$LIBSSL_CRYPTO_REF" "@executable_path/$LIBCRYPTO_NAME" "dist/$LIBSSL_NAME"
+
+          # Fix libzip's internal reference to libcrypto (not all builds include this)
+          LIBZIP_CRYPTO_REF=$(otool -L "dist/$LIBZIP_NAME" | awk '/libcrypto/{print $1; exit}')
+          if [ -n "$LIBZIP_CRYPTO_REF" ]; then
+            install_name_tool -change "$LIBZIP_CRYPTO_REF" "@executable_path/$LIBCRYPTO_NAME" "dist/$LIBZIP_NAME"
+          fi
+
+          dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-macos.zip *
 
       - name: Upload Windows build
