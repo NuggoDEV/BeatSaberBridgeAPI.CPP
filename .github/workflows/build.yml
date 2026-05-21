@@ -71,7 +71,7 @@ jobs:
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
-        run: sudo apt-get install -y --no-install-recommends libpulse0 libzip-dev
+        run: sudo apt-get install -y --no-install-recommends libpulse0 libzip-dev zipcmp
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.cache-build.outputs.cache-hit != 'true'
