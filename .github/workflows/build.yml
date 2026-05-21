@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .deps
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          key: fetchcontent-ninja-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
@@ -104,7 +104,7 @@ jobs:
         if: steps.cache-build.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          mkdir build && cd build
+          rm -rf build && mkdir build && cd build
           cmake_args=(
             -DCMAKE_C_COMPILER_LAUNCHER=sccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -114,7 +114,9 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             cmake_args+=(-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            cmake_args+=(-DOPENSSL_ROOT_DIR="$(brew --prefix openssl)")
+            cmake_args+=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)")
+          else
+            cmake_args+=(-G Ninja -DCMAKE_BUILD_TYPE=Release)
           fi
           cmake .. "${cmake_args[@]}"
 
@@ -162,7 +164,15 @@ jobs:
           Get-ChildItem build\Release\*.dll |
             Where-Object { $_.Extension -eq '.dll' } |
             Copy-Item -Destination dist\
-          .\dist\BeatSaberBridgeAPI.exe --self-test
+
+          # Run self-test from a temp dir: on Windows the OS locks running
+          # executables and loaded DLLs, so the .old cleanup in the binary
+          # silently fails, leaving .old files behind. A temp copy keeps dist\ clean.
+          $testDir = New-Item -ItemType Directory -Path (Join-Path `
+            ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()))
+          Copy-Item dist\* $testDir\
+          & "$testDir\BeatSaberBridgeAPI.exe" --self-test
+
           Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 
       - name: Package and self-test Linux build
