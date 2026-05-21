@@ -98,3 +98,34 @@ add_custom_command(TARGET BeatSaberBridgeAPI.CPP POST_BUILD
     "${DISCORD_SHARED_LIB}"
     "$<TARGET_FILE_DIR:BeatSaberBridgeAPI.CPP>/${DISCORD_SHARED_LIB_NAME}"
 )
+
+if(WIN32)
+    # Deploy OpenSSL runtime DLLs to the build output directory.
+    # FindOpenSSL sets OPENSSL_INCLUDE_DIR; the DLLs live in <root>/bin/.
+    get_filename_component(_openssl_root "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
+    file(GLOB _openssl_deploy_dlls
+        "${_openssl_root}/bin/libssl*.dll"
+        "${_openssl_root}/bin/libcrypto*.dll"
+    )
+    if(NOT _openssl_deploy_dlls)
+        message(FATAL_ERROR "No OpenSSL DLLs found in ${_openssl_root}/bin/ — packaging will be incomplete")
+    endif()
+
+    # Deploy libzip and its zlib dependency from the vcpkg installed directory.
+    if(DEFINED VCPKG_INSTALLED_DIR)
+        if(NOT VCPKG_TARGET_TRIPLET)
+            set(VCPKG_TARGET_TRIPLET "x64-windows")
+        endif()
+        file(GLOB _vcpkg_deploy_dlls
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/zip.dll"
+            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/zlib1.dll"
+        )
+    endif()
+
+    foreach(_dll IN LISTS _openssl_deploy_dlls _vcpkg_deploy_dlls)
+        message(STATUS "Will deploy to build output: ${_dll}")
+        add_custom_command(TARGET BeatSaberBridgeAPI.CPP POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_dll}" "$<TARGET_FILE_DIR:BeatSaberBridgeAPI.CPP>/")
+    endforeach()
+endif()
