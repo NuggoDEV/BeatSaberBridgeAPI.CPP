@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .deps
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          key: fetchcontent-ninja-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux' && steps.cache-build.outputs.cache-hit != 'true'
@@ -104,7 +104,7 @@ jobs:
         if: steps.cache-build.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          mkdir build && cd build
+          rm -rf build && mkdir build && cd build
           cmake_args=(
             -DCMAKE_C_COMPILER_LAUNCHER=sccache
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -114,7 +114,9 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             cmake_args+=(-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            cmake_args+=(-DOPENSSL_ROOT_DIR="$(brew --prefix openssl)")
+            cmake_args+=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$(brew --prefix openssl)")
+          else
+            cmake_args+=(-G Ninja -DCMAKE_BUILD_TYPE=Release)
           fi
           cmake .. "${cmake_args[@]}"
 
@@ -162,7 +164,15 @@ jobs:
           Get-ChildItem build\Release\*.dll |
             Where-Object { $_.Extension -eq '.dll' } |
             Copy-Item -Destination dist\
-          .\dist\BeatSaberBridgeAPI.exe --self-test
+
+          # Run self-test from a temp dir: on Windows the OS locks running
+          # executables and loaded DLLs, so the .old cleanup in the binary
+          # silently fails, leaving .old files behind. A temp copy keeps dist\ clean.
+          $testDir = New-Item -ItemType Directory -Path (Join-Path `
+            ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()))
+          Copy-Item dist\* $testDir\
+          & "$testDir\BeatSaberBridgeAPI.exe" --self-test
+
           Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 
       - name: Package and self-test Linux build
@@ -194,6 +204,42 @@ jobs:
           mkdir dist
           cp build/BeatSaberBridgeAPI         dist/
           cp build/libdiscord_partner_sdk.so  dist/
+
+          # Bundle the non-universal runtime deps (ssl, crypto, zip) so the
+          # release works on distros that don't have OpenSSL 3 or libzip 4
+          # pre-installed. RPATH is already $ORIGIN so no patching needed.
+          LIBSSL_SRC=$(ldd    build/BeatSaberBridgeAPI | awk '/libssl/{print $3;    exit}')
+          LIBCRYPTO_SRC=$(ldd build/BeatSaberBridgeAPI | awk '/libcrypto/{print $3; exit}')
+          LIBZIP_SRC=$(ldd    build/BeatSaberBridgeAPI | awk '/libzip/{print $3;    exit}')
+          [ -n "$LIBSSL_SRC" ]    || { echo 'libssl not found in ldd output';   exit 1; }
+          [ -n "$LIBCRYPTO_SRC" ] || { echo 'libcrypto not found in ldd output'; exit 1; }
+          [ -n "$LIBZIP_SRC" ]    || { echo 'libzip not found in ldd output';    exit 1; }
+          cp "$LIBSSL_SRC"    "dist/$(basename "$LIBSSL_SRC")"
+          cp "$LIBCRYPTO_SRC" "dist/$(basename "$LIBCRYPTO_SRC")"
+          cp "$LIBZIP_SRC"    "dist/$(basename "$LIBZIP_SRC")"
+
+          echo '=== Dist contents ==='
+          find dist -maxdepth 1 -type f | sort | \
+            while IFS= read -r f; do printf '  %-55s %10d bytes\n' "$f" "$(stat -c%s "$f")"; done
+          echo ''
+          dist_required=(
+            BeatSaberBridgeAPI
+            libdiscord_partner_sdk.so
+            "$(basename "$LIBSSL_SRC")"
+            "$(basename "$LIBCRYPTO_SRC")"
+            "$(basename "$LIBZIP_SRC")"
+          )
+          dist_missing=()
+          echo '=== Checking dist files ==='
+          for f in "${dist_required[@]}"; do
+            if [ -f "dist/$f" ]; then echo "  [OK]      $f"
+            else                      echo "  [MISSING] $f"; dist_missing+=("$f")
+            fi
+          done
+          [ "${#dist_missing[@]}" -eq 0 ] || \
+            { echo "Required dist files not found: ${dist_missing[*]}"; exit 1; }
+          echo ''
+
           dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-linux.zip *
 
@@ -257,6 +303,28 @@ jobs:
           LIBZIP_CRYPTO_REF=$(otool -L "dist/$LIBZIP_NAME" | awk '/libcrypto/{print $1; exit}')
           [ -n "$LIBZIP_CRYPTO_REF" ] && \
             install_name_tool -change "$LIBZIP_CRYPTO_REF" "@executable_path/$LIBCRYPTO_NAME" "dist/$LIBZIP_NAME"
+
+          echo '=== Dist contents ==='
+          find dist -maxdepth 1 -type f | sort | \
+            while IFS= read -r f; do printf '  %-55s %10d bytes\n' "$f" "$(stat -f%z "$f")"; done
+          echo ''
+          dist_required=(
+            BeatSaberBridgeAPI
+            libdiscord_partner_sdk.dylib
+            "$LIBSSL_NAME"
+            "$LIBCRYPTO_NAME"
+            "$LIBZIP_NAME"
+          )
+          dist_missing=()
+          echo '=== Checking dist files ==='
+          for f in "${dist_required[@]}"; do
+            if [ -f "dist/$f" ]; then echo "  [OK]      $f"
+            else                      echo "  [MISSING] $f"; dist_missing+=("$f")
+            fi
+          done
+          [ "${#dist_missing[@]}" -eq 0 ] || \
+            { echo "Required dist files not found: ${dist_missing[*]}"; exit 1; }
+          echo ''
 
           dist/BeatSaberBridgeAPI --self-test
           cd dist && zip ../BeatSaberBridgeAPI-macos.zip *

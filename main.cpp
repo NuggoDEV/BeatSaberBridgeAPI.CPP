@@ -374,6 +374,13 @@ void httpServer() {
                     fs::copy(oldPath, path);
                 }
 
+                for (const auto& cleanEntry : fs::directory_iterator(selfExePath.parent_path())) {
+                    if (cleanEntry.path().extension() == ".old") {
+                        std::error_code ec;
+                        fs::remove(cleanEntry.path(), ec);
+                    }
+                }
+
                 std::cout << "Self-test passed: update file operations completed successfully\n";
                 std::exit(EXIT_SUCCESS);
             }
