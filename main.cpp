@@ -15,6 +15,7 @@
 #include <csignal>
 #include <queue>
 #include <mutex>
+#include <condition_variable>
 #include <map>
 #include <vector>
 #include <set>
@@ -53,12 +54,15 @@ struct EventData {
 // Global state
 std::queue<EventData> eventQueue;
 std::mutex queueMutex;
+std::condition_variable queueCv;
 std::string partyId = "";
 EventData storedSongData;
 time_t lastDataTime = std::time(nullptr);
 bool rpcCleared = false;
 time_t pauseStartTime = 0;
 time_t totalPausedDuration = 0;
+// Track last time we saw a HeartbeatReceiver so we can clear presence when it stops
+time_t lastHeartbeatTime = 0;
 
 int httpPort = 8080;
 bool selfTest = false;
@@ -292,6 +296,50 @@ void updatePresence(std::shared_ptr<discordpp::Client> client,
     }
 }
 
+// Token persistence helpers
+static fs::path getTokenFilePath() {
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata) return fs::path(appdata) / "BeatSaberBridgeAPI_token.json";
+    return fs::path("auth_token.json");
+#else
+    const char* home = std::getenv("HOME");
+    if (home) return fs::path(home) / ".beatsaberbridge_token.json";
+    return fs::path("auth_token.json");
+#endif
+}
+
+static bool loadAuthToken(std::string& accessToken, std::string& refreshToken, int32_t& expiresIn) {
+    try {
+        fs::path p = getTokenFilePath();
+        if (!fs::exists(p)) return false;
+        std::ifstream in(p);
+        if (!in) return false;
+        nlohmann::json j;
+        in >> j;
+        if (j.contains("access_token")) accessToken = j["access_token"].get<std::string>();
+        if (j.contains("refresh_token")) refreshToken = j["refresh_token"].get<std::string>();
+        if (j.contains("expires_in")) expiresIn = j["expires_in"].get<int32_t>();
+        return !accessToken.empty();
+    } catch (...) {
+        return false;
+    }
+}
+
+static void saveAuthToken(const std::string& accessToken, const std::string& refreshToken, int32_t expiresIn) {
+    try {
+        fs::path p = getTokenFilePath();
+        nlohmann::json j;
+        j["access_token"] = accessToken;
+        j["refresh_token"] = refreshToken;
+        j["expires_in"] = expiresIn;
+        std::ofstream out(p, std::ios::trunc);
+        if (out) out << j.dump(4);
+    } catch (...) {
+        // ignore failures to persist
+    }
+}
+
 void httpServer() {
     httplib::Server svr;
 
@@ -436,6 +484,9 @@ void httpServer() {
                 eventQueue.push(event);
             }
 
+            // Notify worker that a new event is available
+            queueCv.notify_one();
+
             std::cout << "📨 Received event: " << event.type << std::endl;
 
             res.set_content(nlohmann::json({{"status", "success"}}).dump(), "application/json");
@@ -452,16 +503,30 @@ void httpServer() {
 
 void rpcWorker(std::shared_ptr<discordpp::Client> client) {
     while (running) {
+        EventData data;
+        bool hasEvent = false;
+
+        // Wait for an event or timeout (for inactivity checks)
         {
-            std::lock_guard<std::mutex> lock(queueMutex);
-
+            std::unique_lock<std::mutex> lk(queueMutex);
+            queueCv.wait_for(lk, std::chrono::milliseconds(100), [&]() { return !eventQueue.empty() || !running.load(); });
             if (!eventQueue.empty()) {
-                EventData data = eventQueue.front();
+                data = eventQueue.front();
                 eventQueue.pop();
-                try {
+                hasEvent = true;
+            }
+        }
 
+        if (hasEvent) {
+            try {
                 lastDataTime = std::time(nullptr);
                 rpcCleared = false;
+
+                // If this is a heartbeat event, record the time and skip other handling
+                if (data.type == "HeartbeatReceiver") {
+                    lastHeartbeatTime = std::time(nullptr);
+                    continue;
+                }
 
                 if (data.type == "BeatmapInitialized") {
                     long long currentTime = getCurrentTimestamp();
@@ -475,7 +540,7 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     discordpp::Activity activity;
                     activity.SetType(discordpp::ActivityTypes::Playing);
                     activity.SetState(data.metadata["difficulty"] + " | Solo");
-                    activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + joinMappers(data.mappers));
+                    activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + "Mapped by " + joinMappers(data.mappers));
 
                     discordpp::ActivityTimestamps timestamps;
                     timestamps.SetStart(currentTime * 1000);  // Convert to milliseconds
@@ -566,14 +631,20 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
 
                     updatePresence(client, activity, "quest", "Meta Quest");
                 }
+                else if (data.type == "BeatmapStatUpdate") {
+                    discordpp::Activity activity;
+                    activity.SetType(discordpp::ActivityTypes::Playing);
+
+                    activity.SetState(data.metadata["difficulty"] + " | " + "🎯 " + data.metadata["score"] + " | " + "❌" + data.metadata["notesMissed"] + " | " + "💥 " + data.metadata["notesBadCuts"] +  " | " + "💣 " + data.metadata["bombsHit"]);
+                    updatePresence(client, activity, "quest", "Meta Quest");
+                }
                 else if (data.type == "MultiplayerBeatmapInitialized") {
                     partyId = "";
                     long long currentTime = getCurrentTimestamp();
                     int duration = std::stoi(data.metadata["duration"]);
                     long long endTime = currentTime + duration;
 
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
-
+                    // Prepare the activity now, but perform the actual update after a short delay
                     discordpp::Activity activity;
                     activity.SetType(discordpp::ActivityTypes::Playing);
                     activity.SetState("Status: Playing | " + data.metadata["difficulty"] + " | Multiplayer");
@@ -584,23 +655,27 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     timestamps.SetEnd(endTime * 1000);
                     activity.SetTimestamps(timestamps);
 
-                    updatePresence(client, activity, "quest", "Meta Quest");
+                    // Schedule the presence update asynchronously to avoid blocking the worker
+                    std::thread([client, activity]() mutable {
+                        std::this_thread::sleep_for(std::chrono::seconds(5));
+                        updatePresence(client, activity, "quest", "Meta Quest");
+                    }).detach();
                 }
-                } catch (const std::exception& e) {
-                    std::cerr << "❌ Error processing event '" << data.type << "': " << e.what() << std::endl;
                 }
+            catch (const std::exception& e) {
+                std::cerr << "❌ Error processing event '" << data.type << "': " << e.what() << std::endl;
             }
         }
 
-        // Check inactivity timeout
-        if (!rpcCleared && (std::time(nullptr) - lastDataTime) > INACTIVITY_TIMEOUT) {
-            discordpp::Activity activity;
-            activity.SetType(discordpp::ActivityTypes::Playing);
-            client->UpdateRichPresence(activity, [](auto result) {});
-            rpcCleared = true;
+        // Clear presence if we haven't seen a HeartbeatReceiver recently
+        const int HEARTBEAT_TIMEOUT = 60; // seconds
+        if (!rpcCleared) {
+            time_t now = std::time(nullptr);
+            if (lastHeartbeatTime != 0 && (now - lastHeartbeatTime) > HEARTBEAT_TIMEOUT) {
+                client->ClearRichPresence();
+                rpcCleared = true;
+            }
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -680,37 +755,77 @@ int main(int argc, char* argv[]) {
     args.SetCodeChallenge(codeVerifier.Challenge());
 
     std::cout << "🔐 Starting authorization process...\n";
+    // Prepare helpers for token removal and authorization so we can retry if stored token is invalid
+    auto removeSavedToken = []() {
+        try {
+            fs::path p = getTokenFilePath();
+            if (fs::exists(p)) fs::remove(p);
+        } catch (...) {}
+    };
 
-    // Begin authentication process
-    client->Authorize(args, [client, codeVerifier](auto result, auto code, auto redirectUri) {
-        if (!result.Successful()) {
-            std::cerr << "❌ Authorization failed: " << result.Error() << std::endl;
-            return;
-        }
-        std::cout << "✅ Authorization successful! Getting access token...\n";
+    std::function<void()> doAuthorize;
+    doAuthorize = [&]() {
+        client->Authorize(args, [client, codeVerifier, &doAuthorize](auto result, auto code, auto redirectUri) {
+            if (!result.Successful()) {
+                std::cerr << "❌ Authorization failed: " << result.Error() << std::endl;
+                return;
+            }
+            std::cout << "✅ Authorization successful! Getting access token...\n";
 
             // Exchange auth code for access token
             client->GetToken(applicationId, code, codeVerifier.Verifier(), redirectUri,
-            [client](discordpp::ClientResult result,
-            std::string accessToken,
-            std::string refreshToken,
-            discordpp::AuthorizationTokenType tokenType,
-            int32_t expiresIn,
-            std::string scope) {
-            if (!result.Successful()) {
-                std::cerr << "❌ GetToken failed: " << result.Error() << std::endl;
-                return;
-            }
-            std::cout << "🔓 Access token received! Establishing connection...\n";
-            // Next Step: Update the token and connect
-            client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, accessToken, [client](discordpp::ClientResult result) {
+                [client, &doAuthorize](discordpp::ClientResult result,
+                                       std::string accessToken,
+                                       std::string refreshToken,
+                                       discordpp::AuthorizationTokenType tokenType,
+                                       int32_t expiresIn,
+                                       std::string scope) {
+                    if (!result.Successful()) {
+                        std::cerr << "❌ GetToken failed: " << result.Error() << std::endl;
+                        return;
+                    }
+
+                    // Save token to disk for future runs
+                    saveAuthToken(accessToken, refreshToken, expiresIn);
+
+                    std::cout << "🔓 Access token received! Establishing connection...\n";
+                    // Next Step: Update the token and connect
+                    client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, accessToken, [client, &doAuthorize](discordpp::ClientResult updateResult) {
+                        if (updateResult.Successful()) {
+                            std::cout << "🔑 Token updated, connecting to Discord...\n";
+                            client->Connect();
+                        } else {
+                            std::cerr << "❌ Failed to update token after GetToken: " << updateResult.Error() << std::endl;
+                            // If we can't update, remove saved token and try authorizing again
+                            try { fs::path p = getTokenFilePath(); if (fs::exists(p)) fs::remove(p); } catch(...) {}
+                            doAuthorize();
+                        }
+                    });
+                });
+        });
+    };
+
+    // Try to load a saved token first so the user doesn't need to re-authorize
+    {
+        std::string savedAccess, savedRefresh;
+        int32_t savedExpires = 0;
+        if (loadAuthToken(savedAccess, savedRefresh, savedExpires)) {
+            std::cout << "🔐 Loaded saved access token, attempting to use it...\n";
+            client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, savedAccess, [client, &doAuthorize](discordpp::ClientResult result) {
                 if (result.Successful()) {
-                    std::cout << "🔑 Token updated, connecting to Discord...\n";
+                    std::cout << "🔑 Token updated from disk, connecting to Discord...\n";
                     client->Connect();
+                } else {
+                    std::cerr << "❌ Failed to update token from disk: " << result.Error() << std::endl;
+                    // Remove stored token and re-run authorization
+                    try { fs::path p = getTokenFilePath(); if (fs::exists(p)) fs::remove(p); } catch(...) {}
+                    doAuthorize();
                 }
             });
-        });
-    });
+        } else {
+            doAuthorize();
+        }
+    }
 
     // Start RPC worker thread
     std::thread rpcWorkerThread(rpcWorker, client);
