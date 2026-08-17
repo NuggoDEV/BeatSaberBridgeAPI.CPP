@@ -58,6 +58,7 @@ std::string partyId = "";
 EventData storedSongData;
 time_t lastDataTime = std::time(nullptr);
 bool rpcCleared = false;
+bool inBeatmap = false;
 time_t pauseStartTime = 0;
 time_t totalPausedDuration = 0;
 // Track last time we saw a HeartbeatReceiver so we can clear presence when it stops
@@ -523,6 +524,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                 }
 
                 if (data.type == "BeatmapInitialized") {
+                    inBeatmap = true;
+
                     long long currentTime = getCurrentTimestamp();
                     int duration = std::stoi(data.metadata["duration"]);
                     long long endTime = currentTime + duration;
@@ -560,6 +563,7 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     updatePresence(client, activity, "quest", "Meta Quest");
                 }
                 else if (data.type == "BeatmapCleared") {
+                    inBeatmap = false;
                     activity.SetType(discordpp::ActivityTypes::Playing);
                     activity.SetState("Status: Cleared | " + data.metadata["difficulty"]);
                     activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + joinMappers(data.mappers));
@@ -567,6 +571,7 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     updatePresence(client, activity, "quest", "Meta Quest");
                 }
                 else if (data.type == "BeatmapFailed") {
+                    inBeatmap = false;
                     activity.SetType(discordpp::ActivityTypes::Playing);
                     activity.SetState("Status: Failed | " + storedSongData.metadata["difficulty"]);
                     activity.SetDetails(storedSongData.metadata["author"] + " - " + storedSongData.metadata["title"] + " | " + joinMappers(storedSongData.mappers));
@@ -574,6 +579,7 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     updatePresence(client, activity, "quest", "Meta Quest");
                 }
                 else if (data.type == "BeatmapPaused") {
+                    inBeatmap = false;
                     pauseStartTime = std::time(nullptr);
 
                     activity.SetType(discordpp::ActivityTypes::Playing);
@@ -582,6 +588,7 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     updatePresence(client, activity);
                 }
                 else if (data.type == "BeatmapResumed") {
+                    inBeatmap = true;
                     time_t currentTime = std::time(nullptr);
 
                     if (pauseStartTime != 0) {
@@ -623,6 +630,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     updatePresence(client, activity, "quest", "Meta Quest");
                 }
                 else if (data.type == "BeatmapStatUpdate") {
+                    if (!inBeatmap) continue;
+
                     activity.SetType(discordpp::ActivityTypes::Playing);
 
                     activity.SetDetails(currentSongData["author"].get<std::string>() + " - " + currentSongData["title"].get<std::string>() + " | " + "Mapped by " + currentSongData["mappers"].get<std::string>());
