@@ -61,6 +61,13 @@ set_target_properties(BeatSaberBridgeAPI.CPP PROPERTIES
     INSTALL_RPATH "${RPATH_ORIGIN}"
 )
 
+# Place build outputs (executables, libs, archives) directly in the build root
+set_target_properties(BeatSaberBridgeAPI.CPP PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
 # Link the external libraries
 # Drogon creates the target name "drogon" when added via FetchContent, not the installed-package alias "Drogon::Drogon".
 target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE nlohmann_json::nlohmann_json OpenSSL::SSL OpenSSL::Crypto drogon)
