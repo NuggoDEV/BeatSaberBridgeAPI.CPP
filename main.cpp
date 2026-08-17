@@ -722,9 +722,53 @@ int main(int argc, char* argv[]) {
     }
 
     if (selfTest) {
-        auto client = std::make_shared<discordpp::Client>();
-        discordpp::RunCallbacks();
-        std::cout << "Self-test passed: Discord SDK loaded and initialized successfully\n";
+        // Run the HTTP server in the main thread (required by drogon) and
+        // have a background tester thread poll `/version`. When the tester
+        // gets a successful response it will call `app().quit()` to stop the
+        // server and record success.
+        std::atomic<int> selfTestResult{1};
+
+        std::thread tester([&]() {
+            auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
+            auto request = drogon::HttpRequest::newHttpRequest();
+            request->setMethod(drogon::Get);
+            request->setPath("/version");
+
+            // Retry for up to ~3 seconds
+            for (int attempt = 0; attempt < 8; ++attempt) {
+                std::promise<drogon::HttpResponsePtr> p;
+                auto f = p.get_future();
+                appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
+                    if (result == drogon::ReqResult::Ok) p.set_value(response);
+                    else p.set_value(nullptr);
+                });
+
+                if (f.wait_for(std::chrono::milliseconds(900)) == std::future_status::ready) {
+                    auto resp = f.get();
+                    if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
+                        selfTestResult.store(0);
+                        break;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            }
+
+            drogon::app().quit();
+        });
+
+        // Run server on main thread (blocks until tester calls quit)
+        httpServer();
+
+        // Wait for tester to finish
+        if (tester.joinable()) tester.join();
+
+        if (selfTestResult.load() == 0) {
+            std::cout << "Self-test passed: HTTP server responded to /version" << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Self-test failed: /version did not respond OK" << std::endl;
+            return 1;
+        }
     }
 
     std::signal(SIGINT, signalHandler);
