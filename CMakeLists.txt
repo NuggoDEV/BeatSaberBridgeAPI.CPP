@@ -7,10 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Fetch external libraries
 include(FetchContent)
 
-# Fetch cpp-httplib
-FetchContent_Declare(cpp_httplib
-  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-  GIT_TAG master
+# Fetch Drogon
+FetchContent_Declare(drogon
+  GIT_REPOSITORY https://github.com/drogonframework/drogon.git
+  GIT_TAG v1.9.10
+)
+
+# Fetch Jsoncpp for Drogon's required dependency chain
+FetchContent_Declare(jsoncpp
+  GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
+  GIT_TAG 1.9.5
 )
 
 # Fetch nlohmann/json
@@ -19,7 +25,18 @@ FetchContent_Declare(json
   GIT_TAG master
 )
 
-FetchContent_MakeAvailable(cpp_httplib json)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_CTL OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_ORM OFF CACHE BOOL "" FORCE)
+set(BUILD_POSTGRESQL OFF CACHE BOOL "" FORCE)
+set(BUILD_MYSQL OFF CACHE BOOL "" FORCE)
+set(BUILD_SQLITE OFF CACHE BOOL "" FORCE)
+set(BUILD_REDIS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(jsoncpp)
+list(APPEND CMAKE_PREFIX_PATH "${jsoncpp_BINARY_DIR}")
+FetchContent_MakeAvailable(drogon json)
 
 if(APPLE)
     set(RPATH_ORIGIN "@executable_path")
@@ -45,11 +62,25 @@ set_target_properties(BeatSaberBridgeAPI.CPP PROPERTIES
 )
 
 # Link the external libraries
-target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE nlohmann_json::nlohmann_json OpenSSL::SSL OpenSSL::Crypto)
+# Drogon creates the target name "drogon" when added via FetchContent, not the installed-package alias "Drogon::Drogon".
+target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE nlohmann_json::nlohmann_json OpenSSL::SSL OpenSSL::Crypto drogon)
 
-
-# Add cpp-httplib include directory
-target_include_directories(BeatSaberBridgeAPI.CPP PRIVATE ${cpp_httplib_SOURCE_DIR})
+# jsoncpp can expose different target names depending on build options (shared/static/object)
+# Prefer the namespaced target if available, otherwise fall back to the concrete targets or
+# the JSONCPP_LIBRARIES variable discovered by a Find module.
+if(TARGET JsonCpp::JsonCpp)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE JsonCpp::JsonCpp)
+elseif(TARGET jsoncpp_lib)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_lib)
+elseif(TARGET jsoncpp_static)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_static)
+elseif(TARGET jsoncpp_object)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_object)
+elseif(DEFINED JSONCPP_LIBRARIES)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE ${JSONCPP_LIBRARIES})
+else()
+    message(WARNING "jsoncpp target not found; linking may fail")
+endif()
 
 if(WIN32)
     target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE libzip::zip)
