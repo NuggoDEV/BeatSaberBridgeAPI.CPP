@@ -90,7 +90,7 @@ jobs:
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.cache-build.outputs.cache-hit != 'true'
-        run: brew install libzip openssl
+        run: brew install libzip openssl jsoncpp
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows' && steps.cache-build.outputs.cache-hit != 'true'
