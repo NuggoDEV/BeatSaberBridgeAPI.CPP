@@ -725,11 +725,6 @@ int main(int argc, char* argv[]) {
         auto client = std::make_shared<discordpp::Client>();
         discordpp::RunCallbacks();
         std::cout << "Self-test passed: Discord SDK loaded and initialized successfully\n";
-
-        std::thread httpServerThread(httpServer);
-        httpServerThread.detach();
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
 
     std::signal(SIGINT, signalHandler);
