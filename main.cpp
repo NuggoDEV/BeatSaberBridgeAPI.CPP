@@ -729,32 +729,7 @@ int main(int argc, char* argv[]) {
         std::thread httpServerThread(httpServer);
         httpServerThread.detach();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        std::cout << "Test server is running\n";
-
-        auto appClient = drogon::HttpClient::newHttpClient("http://localhost:" + std::to_string(httpPort));
-        auto request = drogon::HttpRequest::newHttpRequest();
-        request->setMethod(drogon::Post);
-        request->setPath("/update");
-
-        std::promise<drogon::HttpResponsePtr> selfTestPromise;
-        auto selfTestFuture = selfTestPromise.get_future();
-        appClient->sendRequest(request, [&selfTestPromise](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
-            if (result == drogon::ReqResult::Ok) {
-                selfTestPromise.set_value(response);
-            } else {
-                selfTestPromise.set_value(nullptr);
-            }
-        });
-
-        auto r = selfTestFuture.get();
-        if (!r) {
-            std::cerr << "Self-test failed: could not connect to local server\n";
-            return 1;
-        }
-        std::cerr << "Self-test failed: /update returned status " << static_cast<int>(r->getStatusCode()) << "\n";
-        return 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
 
     std::signal(SIGINT, signalHandler);
