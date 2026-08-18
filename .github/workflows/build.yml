@@ -313,11 +313,22 @@ jobs:
           cp "$LIBJSONCPP_SRC" "dist/$LIBJSONCPP_NAME"
           cp "$LIBTRANTOR_SRC" "dist/$LIBTRANTOR_NAME"
 
-          if [ -f "build/libdrogon.dylib" ]; then
-            cp build/libdrogon.dylib dist/
-          elif [ -f "build/lib/libdrogon.dylib" ]; then
-            cp build/lib/libdrogon.dylib dist/
-          fi
+          # Copy any built libdrogon dylibs from common build/install locations into dist
+          echo 'Searching for libdrogon dylibs to include in dist/'
+          find_paths=("build" "build/lib" "build/_deps" "build/_deps/cpp_httplib-build" "./lib" "/usr/local/lib" "/usr/lib")
+          for p in "${find_paths[@]}"; do
+            if [ -d "$p" ]; then
+              find "$p" -maxdepth 4 -type f -name 'libdrogon*.dylib' -print -exec cp -v '{}' dist/ \; || true
+            fi
+          done
+          # Also check for versioned sonames e.g. libdrogon.1.dylib
+          find build -maxdepth 4 -type f -name 'libdrogon*.dylib' -print -exec cp -v '{}' dist/ \; || true
+          echo 'Copied libdrogon candidates:'
+          ls -la dist/libdrogon*.dylib 2>/dev/null || true
+
+          # Dump current linking info for diagnostics
+          echo 'Before patches: dist/BeatSaberBridgeAPI links:'
+          otool -L dist/BeatSaberBridgeAPI || true
 
           # Rewrite the binary's LC_LOAD_DYLIB entries to use @executable_path
           install_name_tool -change "$LIBSSL_SRC"    "@executable_path/$LIBSSL_NAME"    dist/BeatSaberBridgeAPI
