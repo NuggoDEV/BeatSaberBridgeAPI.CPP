@@ -346,6 +346,17 @@ jobs:
             for f in dist/*.dylib; do
               install_name_tool -change "@rpath/libdrogon.1.dylib" "@executable_path/$DROGON_BASENAME" "$f" || true
             done
+            # Also find and replace any other libdrogon references (full paths, different sonames)
+            DROGON_REFS=$(otool -L dist/BeatSaberBridgeAPI | awk '/libdrogon/{print $1}' || true)
+            for r in $DROGON_REFS; do
+              [ -n "$r" ] && install_name_tool -change "$r" "@executable_path/$DROGON_BASENAME" dist/BeatSaberBridgeAPI || true
+            done
+            for f in dist/*.dylib; do
+              DROGON_REFS_F=$(otool -L "$f" | awk '/libdrogon/{print $1}' || true)
+              for r in $DROGON_REFS_F; do
+                [ -n "$r" ] && install_name_tool -change "$r" "@executable_path/$DROGON_BASENAME" "$f" || true
+              done
+            done
           fi
 
           echo '=== Dist contents ==='
