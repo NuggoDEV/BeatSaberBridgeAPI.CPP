@@ -313,6 +313,12 @@ jobs:
           cp "$LIBJSONCPP_SRC" "dist/$LIBJSONCPP_NAME"
           cp "$LIBTRANTOR_SRC" "dist/$LIBTRANTOR_NAME"
 
+          if [ -f "build/libdrogon.dylib" ]; then
+            cp build/libdrogon.dylib dist/
+          elif [ -f "build/lib/libdrogon.dylib" ]; then
+            cp build/lib/libdrogon.dylib dist/
+          fi
+
           # Rewrite the binary's LC_LOAD_DYLIB entries to use @executable_path
           install_name_tool -change "$LIBSSL_SRC"    "@executable_path/$LIBSSL_NAME"    dist/BeatSaberBridgeAPI
           install_name_tool -change "$LIBCRYPTO_SRC" "@executable_path/$LIBCRYPTO_NAME" dist/BeatSaberBridgeAPI
@@ -330,6 +336,17 @@ jobs:
           LIBZIP_CRYPTO_REF=$(otool -L "dist/$LIBZIP_NAME" | awk '/libcrypto/{print $1; exit}')
           [ -n "$LIBZIP_CRYPTO_REF" ] && \
             install_name_tool -change "$LIBZIP_CRYPTO_REF" "@executable_path/$LIBCRYPTO_NAME" "dist/$LIBZIP_NAME"
+
+          # If we copied a drogon dylib into dist, normalize its id and update references
+          DROGON_LOCAL=$(ls dist/libdrogon*.dylib 2>/dev/null | head -n1 || true)
+          if [ -n "$DROGON_LOCAL" ]; then
+            DROGON_BASENAME=$(basename "$DROGON_LOCAL")
+            install_name_tool -id "@executable_path/$DROGON_BASENAME" "$DROGON_LOCAL" || true
+            install_name_tool -change "@rpath/libdrogon.1.dylib" "@executable_path/$DROGON_BASENAME" dist/BeatSaberBridgeAPI || true
+            for f in dist/*.dylib; do
+              install_name_tool -change "@rpath/libdrogon.1.dylib" "@executable_path/$DROGON_BASENAME" "$f" || true
+            done
+          fi
 
           echo '=== Dist contents ==='
           find dist -maxdepth 1 -type f | sort | \
