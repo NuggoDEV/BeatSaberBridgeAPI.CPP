@@ -143,9 +143,9 @@ jobs:
             'bz2.dll'                 = $false
             'libssl*.dll'             = $true
             'libcrypto*.dll'          = $true
-            'libdrogon*.dll'          = $true
-            'libjsoncpp*.dll'         = $true
-            'libtrantor*.dll'         = $true
+            'drogon*.dll'          = $true
+            'jsoncpp*.dll'         = $true
+            'trantor*.dll'         = $true
           }
           $missing = @()
           Write-Host '=== Checking required files ==='
