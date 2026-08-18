@@ -213,16 +213,19 @@ jobs:
           LIBZIP_SRC=$(ldd    build/BeatSaberBridgeAPI | awk '/libzip/{print $3;    exit}')
           LIBDROGON_SRC=$(ldd build/BeatSaberBridgeAPI | awk '/libdrogon/{print $3; exit}')
           LIBJSONCPP_SRC=$(ldd build/BeatSaberBridgeAPI | awk '/libjsoncpp/{print $3; exit}')
+          LIBTRANTOR_SRC=$(ldd build/BeatSaberBridgeAPI | awk '/libtrantor/{print $3; exit}')
           [ -n "$LIBSSL_SRC" ]    || { echo 'libssl not found in ldd output';   exit 1; }
           [ -n "$LIBCRYPTO_SRC" ] || { echo 'libcrypto not found in ldd output'; exit 1; }
           [ -n "$LIBZIP_SRC" ]    || { echo 'libzip not found in ldd output';    exit 1; }
           [ -n "$LIBDROGON_SRC" ] || { echo 'libdrogon not found in ldd output'; exit 1; }
           [ -n "$LIBJSONCPP_SRC" ] || { echo 'libjsoncpp not found in ldd output'; exit 1; }
+          [ -n "$LIBTRANTOR_SRC" ] || { echo 'libtrantor not found in ldd output'; exit 1; }
           cp "$LIBSSL_SRC"    "dist/$(basename "$LIBSSL_SRC")"
           cp "$LIBCRYPTO_SRC" "dist/$(basename "$LIBCRYPTO_SRC")"
           cp "$LIBZIP_SRC"    "dist/$(basename "$LIBZIP_SRC")"
           cp "$LIBDROGON_SRC" "dist/$(basename "$LIBDROGON_SRC")"
           cp "$LIBJSONCPP_SRC" "dist/$(basename "$LIBJSONCPP_SRC")"
+          cp "$LIBTRANTOR_SRC" "dist/$(basename "$LIBTRANTOR_SRC")"
 
           echo '=== Dist contents ==='
           find dist -maxdepth 1 -type f | sort | \
@@ -236,6 +239,7 @@ jobs:
             "$(basename "$LIBZIP_SRC")"
             "$(basename "$LIBDROGON_SRC")"
             "$(basename "$LIBJSONCPP_SRC")"
+            "$(basename "$LIBTRANTOR_SRC")"
           )
           dist_missing=()
           echo '=== Checking dist files ==='
