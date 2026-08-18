@@ -90,7 +90,7 @@ jobs:
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS' && steps.cache-build.outputs.cache-hit != 'true'
-        run: brew install libzip openssl jsoncpp
+        run: brew install libzip openssl jsoncpp drogon
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows' && steps.cache-build.outputs.cache-hit != 'true'
@@ -322,6 +322,28 @@ jobs:
                 cp -v "$FOUND" "dist/$NAME" && return 0 || true
               fi
             done
+            # Try Homebrew-specific queries for drogon
+            if command -v brew >/dev/null 2>&1; then
+              # try cellar and prefix for drogon
+              CELLAR=$(brew --cellar drogon 2>/dev/null || true)
+              PREFIX=$(brew --prefix drogon 2>/dev/null || true)
+              for base in "$CELLAR" "$PREFIX" "/opt/homebrew/Cellar/drogon" "/usr/local/Cellar/drogon"; do
+                if [ -n "$base" ] && [ -d "$base" ]; then
+                  FOUND=$(find "$base" -maxdepth 4 -type f -name "$NAME" -print -quit 2>/dev/null || true)
+                  if [ -n "$FOUND" ]; then
+                    echo "Found $NAME in Homebrew at $FOUND; copying to dist/"
+                    cp -v "$FOUND" "dist/$NAME" && return 0 || true
+                  fi
+                fi
+              done
+            fi
+
+            # As a last resort, search the whole filesystem (limited) for versioned soname
+            FOUND=$(find / -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
+            if [ -n "$FOUND" ]; then
+              echo "Found $NAME at $FOUND (global search); copying to dist/"
+              cp -v "$FOUND" "dist/$NAME" && return 0 || true
+            fi
             echo "Warning: could not locate $NAME (otool reported: $SRC)"
             return 1
           }
