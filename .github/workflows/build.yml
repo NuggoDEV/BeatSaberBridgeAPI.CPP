@@ -388,6 +388,23 @@ jobs:
           echo 'Copied libdrogon candidates:'
           ls -la dist/libdrogon*.dylib 2>/dev/null || true
 
+          # Ensure dist contains the soname filenames the binary recorded (e.g.
+          # libdrogon.1.dylib) even if we only copied a versioned file like
+          # libdrogon.1.9.10.dylib. Create a copy (or symlink) named as the
+          # expected basename so the later dist checks succeed.
+          for LIBVAR in LIBDROGON LIBJSONCPP LIBTRANTOR; do
+            NAME_VAR="${LIBVAR}_NAME"
+            NAME="${!NAME_VAR}"
+            PREFIX="${NAME%%.*}"
+            if [ -n "$NAME" ]; then
+              FOUND_IN_DIST=$(ls dist/${PREFIX}*.dylib 2>/dev/null | head -n1 || true)
+              if [ -n "$FOUND_IN_DIST" ] && [ ! -f "dist/$NAME" ]; then
+                echo "Creating copy for expected name dist/$NAME -> $(basename "$FOUND_IN_DIST")"
+                cp -v "$FOUND_IN_DIST" "dist/$NAME" || ln -s "$(basename "$FOUND_IN_DIST")" "dist/$NAME" || true
+              fi
+            fi
+          done
+
           # Dump current linking info for diagnostics
           echo 'Before patches: dist/BeatSaberBridgeAPI links:'
           otool -L dist/BeatSaberBridgeAPI || true
