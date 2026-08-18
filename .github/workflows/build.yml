@@ -306,12 +306,31 @@ jobs:
           LIBJSONCPP_NAME=$(basename "$LIBJSONCPP_SRC")
           LIBTRANTOR_NAME=$(basename "$LIBTRANTOR_SRC")
 
-          cp "$LIBSSL_SRC"    "dist/$LIBSSL_NAME"
-          cp "$LIBCRYPTO_SRC" "dist/$LIBCRYPTO_NAME"
-          cp "$LIBZIP_SRC"    "dist/$LIBZIP_NAME"
-          cp "$LIBDROGON_SRC" "dist/$LIBDROGON_NAME"
-          cp "$LIBJSONCPP_SRC" "dist/$LIBJSONCPP_NAME"
-          cp "$LIBTRANTOR_SRC" "dist/$LIBTRANTOR_NAME"
+          # Helper: copy a library even when otool reported an @rpath-style name
+          copy_lib() {
+            SRC="$1"; NAME="$2"
+            if [ -f "$SRC" ]; then
+              cp -v "$SRC" "dist/$NAME"
+              return 0
+            fi
+            # Try to find the file by name in common locations
+            SEARCH_PATHS=("dist" "build" "build/lib" "build/_deps" "/opt/homebrew" "/usr/local/lib" "/usr/lib")
+            for sp in "${SEARCH_PATHS[@]}"; do
+              FOUND=$(find "$sp" -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
+              if [ -n "$FOUND" ]; then
+                cp -v "$FOUND" "dist/$NAME" && return 0 || true
+              fi
+            done
+            echo "Warning: could not locate $NAME (otool reported: $SRC)"
+            return 1
+          }
+
+          copy_lib "$LIBSSL_SRC" "$LIBSSL_NAME"
+          copy_lib "$LIBCRYPTO_SRC" "$LIBCRYPTO_NAME"
+          copy_lib "$LIBZIP_SRC" "$LIBZIP_NAME"
+          copy_lib "$LIBDROGON_SRC" "$LIBDROGON_NAME"
+          copy_lib "$LIBJSONCPP_SRC" "$LIBJSONCPP_NAME"
+          copy_lib "$LIBTRANTOR_SRC" "$LIBTRANTOR_NAME"
 
           # Copy any built libdrogon dylibs from common build/install locations into dist
           echo 'Searching for libdrogon dylibs to include in dist/'
