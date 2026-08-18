@@ -310,40 +310,60 @@ jobs:
           copy_lib() {
             SRC="$1"; NAME="$2"
             if [ -f "$SRC" ]; then
-              cp -v "$SRC" "dist/$NAME"
-              return 0
+              cp -v "$SRC" "dist/$NAME" && return 0 || true
             fi
-            # Try to find the file by name in common locations (include Homebrew Cellar/opt)
-            SEARCH_PATHS=("dist" "build" "build/lib" "build/_deps" "/opt/homebrew" "/opt/homebrew/Cellar" "/opt/homebrew/opt" "/usr/local/Cellar" "/usr/local/opt" "/usr/local/lib" "/usr/lib" "/opt/homebrew/opt/drogon" "/opt/homebrew/Cellar/drogon" "/usr/local/opt/drogon" "/usr/local/Cellar/drogon")
+            # Try to find the file by exact name in common locations
+            SEARCH_PATHS=("dist" "build" "build/lib" "build/_deps" ".deps" ".deps/drogon-build" "/opt/homebrew" "/opt/homebrew/Cellar" "/opt/homebrew/opt" "/usr/local/Cellar" "/usr/local/opt" "/usr/local/lib" "/usr/lib")
             for sp in "${SEARCH_PATHS[@]}"; do
-              FOUND=$(find "$sp" -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
-              if [ -n "$FOUND" ]; then
-                echo "Found $NAME at $FOUND; copying to dist/"
-                cp -v "$FOUND" "dist/$NAME" && return 0 || true
+              if [ -d "$sp" ]; then
+                FOUND=$(find "$sp" -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
+                if [ -n "$FOUND" ]; then
+                  echo "Found $NAME at $FOUND; copying to dist/"
+                  cp -v "$FOUND" "dist/$NAME" && return 0 || true
+                fi
               fi
             done
-            # Try Homebrew-specific queries for drogon
-            if command -v brew >/dev/null 2>&1; then
-              # try cellar and prefix for drogon
-              CELLAR=$(brew --cellar drogon 2>/dev/null || true)
-              PREFIX=$(brew --prefix drogon 2>/dev/null || true)
-              for base in "$CELLAR" "$PREFIX" "/opt/homebrew/Cellar/drogon" "/usr/local/Cellar/drogon"; do
-                if [ -n "$base" ] && [ -d "$base" ]; then
-                  FOUND=$(find "$base" -maxdepth 4 -type f -name "$NAME" -print -quit 2>/dev/null || true)
+
+            # If exact name not found, try wildcard by library prefix (handles libdrogon.1 vs libdrogon.1.9.10)
+            LIBPREFIX="${NAME%%.*}"
+            if [ -n "$LIBPREFIX" ]; then
+              echo "Searching for ${LIBPREFIX}*.dylib patterns"
+              for sp in "${SEARCH_PATHS[@]}"; do
+                if [ -d "$sp" ]; then
+                  FOUND=$(find "$sp" -maxdepth 8 -type f -name "${LIBPREFIX}*.dylib" -print -quit 2>/dev/null || true)
                   if [ -n "$FOUND" ]; then
-                    echo "Found $NAME in Homebrew at $FOUND; copying to dist/"
-                    cp -v "$FOUND" "dist/$NAME" && return 0 || true
+                    BASENAME=$(basename "$FOUND")
+                    echo "Found $FOUND -> copying as $BASENAME to dist/"
+                    cp -v "$FOUND" "dist/$BASENAME" && return 0 || true
                   fi
                 fi
               done
             fi
 
-            # As a last resort, search the whole filesystem (limited) for versioned soname
-            FOUND=$(find / -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
-            if [ -n "$FOUND" ]; then
-              echo "Found $NAME at $FOUND (global search); copying to dist/"
-              cp -v "$FOUND" "dist/$NAME" && return 0 || true
+            # Try Homebrew-specific queries for drogon
+            if command -v brew >/dev/null 2>&1; then
+              CELLAR=$(brew --cellar drogon 2>/dev/null || true)
+              PREFIX=$(brew --prefix drogon 2>/dev/null || true)
+              for base in "$CELLAR" "$PREFIX" "/opt/homebrew/Cellar/drogon" "/usr/local/Cellar/drogon"; do
+                if [ -n "$base" ] && [ -d "$base" ]; then
+                  FOUND=$(find "$base" -maxdepth 4 -type f -name "${LIBPREFIX}*.dylib" -print -quit 2>/dev/null || true)
+                  if [ -n "$FOUND" ]; then
+                    BASENAME=$(basename "$FOUND")
+                    echo "Found $FOUND in Homebrew; copying as $BASENAME to dist/"
+                    cp -v "$FOUND" "dist/$BASENAME" && return 0 || true
+                  fi
+                fi
+              done
             fi
+
+            # Last resort: limited global search
+            FOUND=$(find / -maxdepth 6 -type f -name "${LIBPREFIX}*.dylib" -print -quit 2>/dev/null || true)
+            if [ -n "$FOUND" ]; then
+              BASENAME=$(basename "$FOUND")
+              echo "Found $FOUND (global search); copying as $BASENAME to dist/"
+              cp -v "$FOUND" "dist/$BASENAME" && return 0 || true
+            fi
+
             echo "Warning: could not locate $NAME (otool reported: $SRC)"
             return 1
           }
