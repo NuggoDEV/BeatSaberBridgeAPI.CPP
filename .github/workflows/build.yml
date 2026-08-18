@@ -313,11 +313,12 @@ jobs:
               cp -v "$SRC" "dist/$NAME"
               return 0
             fi
-            # Try to find the file by name in common locations
-            SEARCH_PATHS=("dist" "build" "build/lib" "build/_deps" "/opt/homebrew" "/usr/local/lib" "/usr/lib")
+            # Try to find the file by name in common locations (include Homebrew Cellar/opt)
+            SEARCH_PATHS=("dist" "build" "build/lib" "build/_deps" "/opt/homebrew" "/opt/homebrew/Cellar" "/opt/homebrew/opt" "/usr/local/Cellar" "/usr/local/opt" "/usr/local/lib" "/usr/lib")
             for sp in "${SEARCH_PATHS[@]}"; do
               FOUND=$(find "$sp" -maxdepth 6 -type f -name "$NAME" -print -quit 2>/dev/null || true)
               if [ -n "$FOUND" ]; then
+                echo "Found $NAME at $FOUND; copying to dist/"
                 cp -v "$FOUND" "dist/$NAME" && return 0 || true
               fi
             done
