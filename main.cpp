@@ -540,9 +540,10 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     currentSongData["author"] = data.metadata["author"];
                     currentSongData["difficulty"] = data.metadata["difficulty"];
                     currentSongData["mappers"] = joinMappers(data.mappers);
+                    currentSongData["duration"] = data.metadata["duration"];
 
                     activity.SetType(discordpp::ActivityTypes::Playing);
-                    activity.SetState(data.metadata["difficulty"] + " | Solo");
+                    activity.SetState(currentSongData["difficulty"].get<std::string>() + " | " + "🎯 0" + " | " + "❌ 0" + " | " + "💥 0" +  " | " + "💣 0");
                     activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + "Mapped by " + joinMappers(data.mappers));
 
                     discordpp::ActivityTimestamps timestamps;
@@ -611,21 +612,16 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     inBeatmap = true;
 
                     long long currentTime = getCurrentTimestamp();
-                    int duration = std::stoi(data.metadata["duration"]);
+                    int duration = std::stoi(currentSongData["duration"].get<std::string>());
                     long long endTime = currentTime + duration;
 
                     storedSongData = data;
                     totalPausedDuration = 0;
                     pauseStartTime = 0;
 
-                    currentSongData["title"] = data.metadata["title"];
-                    currentSongData["author"] = data.metadata["author"];
-                    currentSongData["difficulty"] = data.metadata["difficulty"];
-                    currentSongData["mappers"] = joinMappers(data.mappers);
-
                     activity.SetType(discordpp::ActivityTypes::Playing);
-                    activity.SetState(data.metadata["difficulty"] + " | Solo");
-                    activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + "Mapped by " + joinMappers(data.mappers));
+                    activity.SetState(currentSongData["difficulty"].get<std::string>() + " | " + "🎯 0" + " | " + "❌ 0" + " | " + "💥 0" +  " | " + "💣 0");
+                    activity.SetDetails(currentSongData["author"].get<std::string>() + " - " + currentSongData["title"].get<std::string>() + " | " + "Mapped by " + currentSongData["mappers"].get<std::string>());
 
                     discordpp::ActivityTimestamps timestamps;
                     timestamps.SetStart(currentTime * 1000);  // Convert to milliseconds
@@ -756,6 +752,7 @@ int main(int argc, char* argv[]) {
         // gets a successful response it will call `app().quit()` to stop the
         // server and record success.
         std::atomic<int> selfTestResult{1};
+        std::string selfTestFailureReason;
 
         std::thread tester([&]() {
             auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
@@ -774,11 +771,30 @@ int main(int argc, char* argv[]) {
 
                 if (f.wait_for(std::chrono::milliseconds(900)) == std::future_status::ready) {
                     auto resp = f.get();
-                    if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
-                        selfTestResult.store(0);
-                        break;
+                    if (resp) {
+                        if (resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
+                            selfTestResult.store(0);
+                            break;
+                        } else {
+                            selfTestFailureReason = "HTTP status " + std::to_string(static_cast<int>(resp->getStatusCode()));
+                            try {
+                                std::string body = std::string(resp->getBody());
+                                if (!body.empty()) {
+                                    // limit body length to avoid noisy logs
+                                    if (body.size() > 512) body = body.substr(0, 512) + "...";
+                                    selfTestFailureReason += "; body: " + body;
+                                }
+                            } catch (...) {
+                                // ignore failures reading body
+                            }
+                        }
+                    } else {
+                        selfTestFailureReason = "no response (request failed)";
                     }
+                } else {
+                    selfTestFailureReason = "timeout waiting for response";
                 }
+
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
 
