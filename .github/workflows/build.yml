@@ -141,6 +141,10 @@ jobs:
             'zip.dll'                 = $false
             'z.dll'                   = $false
             'bz2.dll'                 = $false
+            'brotlicommon.dll'          = $false
+            'brotlidec.dll'             = $false
+            'brotlienc.dll'             = $false
+            'cares.dll'                 = $false
             'libssl*.dll'             = $true
             'libcrypto*.dll'          = $true
             'drogon*.dll'          = $true
