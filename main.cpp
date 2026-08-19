@@ -440,7 +440,9 @@ void httpServer() {
     app.registerHandler("/sendData",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             try {
-                auto json = nlohmann::json::parse(req->getBody());
+                auto body = req->getBody();
+
+                auto json = nlohmann::json::parse(body);
 
                 std::cout << json.dump(4) << std::endl;
 
@@ -604,6 +606,33 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     activity.SetDetails("Mapped by " + joinMappers(storedSongData.mappers) + " | " + storedSongData.metadata["difficulty"]);
 
                     updatePresence(client, activity);
+                }
+                else if (data.type == "BeatmapRestarted") {
+                    inBeatmap = true;
+
+                    long long currentTime = getCurrentTimestamp();
+                    int duration = std::stoi(data.metadata["duration"]);
+                    long long endTime = currentTime + duration;
+
+                    storedSongData = data;
+                    totalPausedDuration = 0;
+                    pauseStartTime = 0;
+
+                    currentSongData["title"] = data.metadata["title"];
+                    currentSongData["author"] = data.metadata["author"];
+                    currentSongData["difficulty"] = data.metadata["difficulty"];
+                    currentSongData["mappers"] = joinMappers(data.mappers);
+
+                    activity.SetType(discordpp::ActivityTypes::Playing);
+                    activity.SetState(data.metadata["difficulty"] + " | Solo");
+                    activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + "Mapped by " + joinMappers(data.mappers));
+
+                    discordpp::ActivityTimestamps timestamps;
+                    timestamps.SetStart(currentTime * 1000);  // Convert to milliseconds
+                    timestamps.SetEnd(endTime * 1000);
+                    activity.SetTimestamps(timestamps);
+
+                    updatePresence(client, activity, "quest", "Meta Quest");
                 }
                 else if (data.type == "LobbyPlayerOnDisconnect" || data.type == "LobbyPlayerOnConnect") {
                     if (partyId.empty()) {
