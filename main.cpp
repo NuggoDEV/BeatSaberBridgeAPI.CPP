@@ -12,6 +12,7 @@
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 #include <thread>
@@ -74,7 +75,7 @@ nlohmann::json currentSongData;
 
 int httpPort = 8080;
 bool selfTest = false;
-std::atomic<bool> selfTestReady{false};
+bool selfTestServer = false;
 fs::path selfExePath;
 
 bool downloadFile(const std::string& host,
@@ -363,13 +364,9 @@ static void saveAuthToken(const std::string& accessToken, const std::string& ref
 void httpServer() {
     auto& app = drogon::app();
 
-    const std::string listenAddress = selfTest ? "127.0.0.1" : "0.0.0.0";
+    const std::string listenAddress = (selfTest || selfTestServer) ? "127.0.0.1" : "0.0.0.0";
     app.addListener(listenAddress, httpPort);
     app.setThreadNum(1);
-
-    if (selfTest) {
-        selfTestReady.store(true);
-    }
 
     app.registerHandler("/version",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
@@ -817,85 +814,76 @@ int main(int argc, char* argv[]) {
             applicationId = std::stoull(argv[++i]);
         } else if (arg == "--self-test") {
             selfTest = true;
+        } else if (arg == "--self-test-server") {
+            selfTestServer = true;
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: " << argv[0] << " [--port <port>] [--app-id <id>] [--self-test]\n";
+            std::cout << "Usage: " << argv[0] << " [--port <port>] [--app-id <id>] [--self-test] [--self-test-server]\n";
             return 0;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
         }
     }
 
+    if (selfTestServer) {
+        httpServer();
+        return 0;
+    }
+
+    if (selfTestServer) {
+        httpServer();
+        return 0;
+    }
+
     if (selfTest) {
-        if (httpPort == 8080 || httpPort == 0) {
-            httpPort = findAvailableLocalPort();
-        }
-
-        std::cout << "Self-test using loopback port " << httpPort << std::endl;
-
         std::atomic<int> selfTestResult{1};
         std::string selfTestFailureReason;
-        selfTestReady.store(false);
 
-        std::thread serverThread([]() {
-            httpServer();
-        });
-
-        auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
-        for (int attempt = 0; attempt < 40; ++attempt) {
-            if (selfTestReady.load()) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        for (int attempt = 0; attempt < 40; ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-
+        std::thread tester([&]() {
+            auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
             auto request = drogon::HttpRequest::newHttpRequest();
             request->setMethod(drogon::Get);
             request->setPath("/version");
 
-            std::promise<drogon::HttpResponsePtr> p;
-            auto f = p.get_future();
-            appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
-                if (result == drogon::ReqResult::Ok) p.set_value(response);
-                else p.set_value(nullptr);
-            });
+            for (int attempt = 0; attempt < 8; ++attempt) {
+                std::promise<drogon::HttpResponsePtr> p;
+                auto f = p.get_future();
+                appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
+                    if (result == drogon::ReqResult::Ok) p.set_value(response);
+                    else p.set_value(nullptr);
+                });
 
-            if (f.wait_for(std::chrono::milliseconds(1000)) == std::future_status::ready) {
-                auto resp = f.get();
-                if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
-                    selfTestResult.store(0);
-                    break;
-                }
+                if (f.wait_for(std::chrono::milliseconds(10000)) == std::future_status::ready) {
+                    auto resp = f.get();
+                    if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
+                        selfTestResult.store(0);
+                        break;
+                    }
 
-                if (resp) {
-                    selfTestFailureReason = "HTTP status " + std::to_string(static_cast<int>(resp->getStatusCode()));
-                    try {
-                        std::string body = std::string(resp->getBody());
-                        if (!body.empty()) {
-                            if (body.size() > 512) body = body.substr(0, 512) + "...";
-                            selfTestFailureReason += "; body: " + body;
-                        }
-                    } catch (...) {
-                        // ignore failures reading body
+                    if (resp) {
+                        selfTestFailureReason = "HTTP status " + std::to_string(static_cast<int>(resp->getStatusCode()));
+                        try {
+                            std::string body = std::string(resp->getBody());
+                            if (!body.empty()) {
+                                if (body.size() > 512) body = body.substr(0, 512) + "...";
+                                selfTestFailureReason += "; body: " + body;
+                            }
+                        } catch (...) {}
+                    } else {
+                        selfTestFailureReason = "no response (request failed)";
                     }
                 } else {
-                    selfTestFailureReason = "no response (request failed)";
+                    selfTestFailureReason = "timeout waiting for response";
                 }
-            } else {
-                selfTestFailureReason = "timeout waiting for response";
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
 
-            if (selfTestResult.load() == 0) {
-                break;
-            }
-        }
+            drogon::app().quit();
+        });
 
-        drogon::app().quit();
-        if (serverThread.joinable()) {
-            serverThread.join();
-        }
+        httpServer();
+
+        if (tester.joinable()) tester.join();
 
         if (selfTestResult.load() == 0) {
             std::cout << "Self-test passed: HTTP server responded to /version" << std::endl;
