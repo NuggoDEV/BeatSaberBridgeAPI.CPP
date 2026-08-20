@@ -814,6 +814,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else {
             std::cerr << "Self-test failed: /version did not respond OK" << std::endl;
+            std::cerr << selfTestFailureReason << std::endl;
             return 1;
         }
     }
