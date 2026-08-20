@@ -771,7 +771,7 @@ int main(int argc, char* argv[]) {
                     else p.set_value(nullptr);
                 });
 
-                if (f.wait_for(std::chrono::milliseconds(900)) == std::future_status::ready) {
+                if (f.wait_for(std::chrono::milliseconds(10000)) == std::future_status::ready) {
                     auto resp = f.get();
                     if (resp) {
                         if (resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
