@@ -440,7 +440,9 @@ void httpServer() {
     app.registerHandler("/sendData",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             try {
-                auto body = req->getBody();
+                auto body = req->bodyData();
+
+                std::cout << body << std::endl;
 
                 auto json = nlohmann::json::parse(body);
 
