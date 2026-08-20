@@ -179,6 +179,9 @@ jobs:
             ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()))
           Copy-Item dist\* $testDir\
           & "$testDir\BeatSaberBridgeAPI.exe" --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows self-test failed with exit code $LASTEXITCODE"
+          }
 
           Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 

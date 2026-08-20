@@ -74,6 +74,7 @@ nlohmann::json currentSongData;
 
 int httpPort = 8080;
 bool selfTest = false;
+std::atomic<bool> selfTestReady{false};
 fs::path selfExePath;
 
 bool downloadFile(const std::string& host,
@@ -366,6 +367,9 @@ void httpServer() {
     app.addListener(listenAddress, httpPort);
     app.setThreadNum(1);
 
+    if (selfTest) {
+        selfTestReady.store(true);
+    }
 
     app.registerHandler("/version",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
@@ -830,12 +834,20 @@ int main(int argc, char* argv[]) {
 
         std::atomic<int> selfTestResult{1};
         std::string selfTestFailureReason;
+        selfTestReady.store(false);
 
         std::thread serverThread([]() {
             httpServer();
         });
 
         auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            if (selfTestReady.load()) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
         for (int attempt = 0; attempt < 40; ++attempt) {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
