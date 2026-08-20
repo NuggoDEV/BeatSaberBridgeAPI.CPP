@@ -829,11 +829,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (selfTestServer) {
-        httpServer();
-        return 0;
-    }
-
     if (selfTest) {
         std::atomic<int> selfTestResult{1};
         std::string selfTestFailureReason;
@@ -844,7 +839,7 @@ int main(int argc, char* argv[]) {
             request->setMethod(drogon::Get);
             request->setPath("/version");
 
-            for (int attempt = 0; attempt < 8; ++attempt) {
+            while (true) {
                 std::promise<drogon::HttpResponsePtr> p;
                 auto f = p.get_future();
                 appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
@@ -852,7 +847,7 @@ int main(int argc, char* argv[]) {
                     else p.set_value(nullptr);
                 });
 
-                if (f.wait_for(std::chrono::milliseconds(10000)) == std::future_status::ready) {
+                if (f.wait_for(std::chrono::milliseconds(1000)) == std::future_status::ready) {
                     auto resp = f.get();
                     if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
                         selfTestResult.store(0);
@@ -872,7 +867,7 @@ int main(int argc, char* argv[]) {
                         selfTestFailureReason = "no response (request failed)";
                     }
                 } else {
-                    selfTestFailureReason = "timeout waiting for response";
+                    selfTestFailureReason = "waiting for server to become reachable";
                 }
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
