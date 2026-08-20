@@ -290,7 +290,8 @@ static void saveAuthToken(const std::string& accessToken, const std::string& ref
 void httpServer() {
     auto& app = drogon::app();
 
-    app.addListener("0.0.0.0", httpPort);
+    const std::string listenAddress = selfTest ? "127.0.0.1" : "0.0.0.0";
+    app.addListener(listenAddress, httpPort);
     app.setThreadNum(1);
 
 
@@ -946,7 +947,7 @@ int main(int argc, char* argv[]) {
     });
     discordThread.detach();
 
-    std::cout << "HTTP Server listening on http://0.0.0.0:" << httpPort << "\n";
+    std::cout << "HTTP Server listening on http://" << (selfTest ? "127.0.0.1" : "0.0.0.0") << ":" << httpPort << "\n";
 
     // Run HTTP server in the main thread (blocking). This replaces the previous
     // threaded server approach and leverages drogon's async IO internally.
