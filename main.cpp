@@ -7,6 +7,12 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 #endif
 #include <thread>
 #include <atomic>
@@ -271,6 +277,72 @@ static bool loadAuthToken(std::string& accessToken, std::string& refreshToken, i
     } catch (...) {
         return false;
     }
+}
+
+static int findAvailableLocalPort() {
+    constexpr int fallbackPort = 8080;
+
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        return fallbackPort;
+    }
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        WSACleanup();
+        return fallbackPort;
+    }
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    int result = bind(sock, reinterpret_cast<SOCKADDR*>(&addr), sizeof(addr));
+    if (result != 0) {
+        closesocket(sock);
+        WSACleanup();
+        return fallbackPort;
+    }
+
+    sockaddr_in boundAddr{};
+    int addrLen = sizeof(boundAddr);
+    result = getsockname(sock, reinterpret_cast<SOCKADDR*>(&boundAddr), &addrLen);
+    int port = fallbackPort;
+    if (result == 0) {
+        port = ntohs(boundAddr.sin_port);
+    }
+
+    closesocket(sock);
+    WSACleanup();
+    return port;
+#else
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return fallbackPort;
+    }
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    if (bind(sock, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0) {
+        close(sock);
+        return fallbackPort;
+    }
+
+    sockaddr_in boundAddr{};
+    socklen_t addrLen = sizeof(boundAddr);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&boundAddr), &addrLen) == 0) {
+        int port = ntohs(boundAddr.sin_port);
+        close(sock);
+        return port;
+    }
+
+    close(sock);
+    return fallbackPort;
+#endif
 }
 
 static void saveAuthToken(const std::string& accessToken, const std::string& refreshToken, int32_t expiresIn) {
@@ -750,74 +822,79 @@ int main(int argc, char* argv[]) {
     }
 
     if (selfTest) {
-        // Run the HTTP server in the main thread (required by drogon) and
-        // have a background tester thread poll `/version`. When the tester
-        // gets a successful response it will call `app().quit()` to stop the
-        // server and record success.
+        if (httpPort == 8080 || httpPort == 0) {
+            httpPort = findAvailableLocalPort();
+        }
+
+        std::cout << "Self-test using loopback port " << httpPort << std::endl;
+
         std::atomic<int> selfTestResult{1};
         std::string selfTestFailureReason;
 
-        std::thread tester([&]() {
-            auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
+        std::thread serverThread([]() {
+            httpServer();
+        });
+
+        auto appClient = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(httpPort));
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
             auto request = drogon::HttpRequest::newHttpRequest();
             request->setMethod(drogon::Get);
             request->setPath("/version");
 
-            // Retry for up to ~3 seconds
-            for (int attempt = 0; attempt < 8; ++attempt) {
-                std::promise<drogon::HttpResponsePtr> p;
-                auto f = p.get_future();
-                appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
-                    if (result == drogon::ReqResult::Ok) p.set_value(response);
-                    else p.set_value(nullptr);
-                });
+            std::promise<drogon::HttpResponsePtr> p;
+            auto f = p.get_future();
+            appClient->sendRequest(request, [&p](drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
+                if (result == drogon::ReqResult::Ok) p.set_value(response);
+                else p.set_value(nullptr);
+            });
 
-                if (f.wait_for(std::chrono::milliseconds(10000)) == std::future_status::ready) {
-                    auto resp = f.get();
-                    if (resp) {
-                        if (resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
-                            selfTestResult.store(0);
-                            break;
-                        } else {
-                            selfTestFailureReason = "HTTP status " + std::to_string(static_cast<int>(resp->getStatusCode()));
-                            try {
-                                std::string body = std::string(resp->getBody());
-                                if (!body.empty()) {
-                                    // limit body length to avoid noisy logs
-                                    if (body.size() > 512) body = body.substr(0, 512) + "...";
-                                    selfTestFailureReason += "; body: " + body;
-                                }
-                            } catch (...) {
-                                // ignore failures reading body
-                            }
-                        }
-                    } else {
-                        selfTestFailureReason = "no response (request failed)";
-                    }
-                } else {
-                    selfTestFailureReason = "timeout waiting for response";
+            if (f.wait_for(std::chrono::milliseconds(1000)) == std::future_status::ready) {
+                auto resp = f.get();
+                if (resp && resp->getStatusCode() == drogon::HttpStatusCode::k200OK) {
+                    selfTestResult.store(0);
+                    break;
                 }
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                if (resp) {
+                    selfTestFailureReason = "HTTP status " + std::to_string(static_cast<int>(resp->getStatusCode()));
+                    try {
+                        std::string body = std::string(resp->getBody());
+                        if (!body.empty()) {
+                            if (body.size() > 512) body = body.substr(0, 512) + "...";
+                            selfTestFailureReason += "; body: " + body;
+                        }
+                    } catch (...) {
+                        // ignore failures reading body
+                    }
+                } else {
+                    selfTestFailureReason = "no response (request failed)";
+                }
+            } else {
+                selfTestFailureReason = "timeout waiting for response";
             }
 
-            drogon::app().quit();
-        });
+            if (selfTestResult.load() == 0) {
+                break;
+            }
+        }
 
-        // Run server on main thread (blocks until tester calls quit)
-        httpServer();
-
-        // Wait for tester to finish
-        if (tester.joinable()) tester.join();
+        drogon::app().quit();
+        if (serverThread.joinable()) {
+            serverThread.join();
+        }
 
         if (selfTestResult.load() == 0) {
             std::cout << "Self-test passed: HTTP server responded to /version" << std::endl;
             return 0;
-        } else {
-            std::cerr << "Self-test failed: /version did not respond OK" << std::endl;
-            std::cerr << selfTestFailureReason << std::endl;
-            return 1;
         }
+
+        std::cerr << "Self-test failed: /version did not respond OK" << std::endl;
+        if (!selfTestFailureReason.empty()) {
+            std::cerr << selfTestFailureReason << std::endl;
+        }
+        return 1;
     }
 
     std::signal(SIGINT, signalHandler);
