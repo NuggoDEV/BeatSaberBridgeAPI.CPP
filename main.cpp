@@ -514,9 +514,18 @@ void httpServer() {
     app.registerHandler("/sendData",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             try {
-                auto body = req->bodyData();
+                std::cout << "=== /sendData ===\n";
+                std::cout << "Method: " << req->getMethodString() << '\n';
+                std::cout << "Path: " << req->path() << '\n';
+                std::cout << "Body size: " << req->body().size() << '\n';
+                std::cout << "Content-Type: "
+                        << req->getHeader("Content-Type") << '\n';
+                std::cout << "Content-Length: "
+                        << req->getHeader("Content-Length") << '\n';
 
-                std::cout << body << std::endl;
+                auto body = req->body();
+
+                std::cout << "Body: [" << body << "]\n";
 
                 auto json = nlohmann::json::parse(body);
 
