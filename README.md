@@ -213,10 +213,13 @@ The bridge exposes a single endpoint that the Beat Saber mod posts to.
 | `BeatmapFailed` | Level failed |
 | `BeatmapPaused` | Level paused |
 | `BeatmapResumed` | Level resumed |
+| `BeatmapRestarted` | Level restarted |
+| `BeatmapStatUpdate` | Shows updated stats of current beatmap every 10 seconds |
 | `MainMenuInitialized` | Returned to main menu |
 | `LevelSelectionMenuInitialized` | In the level selection screen |
 | `LobbyPlayerOnConnect` | Player joined a multiplayer lobby |
 | `LobbyPlayerOnDisconnect` | Player left a multiplayer lobby |
 | `MultiplayerBeatmapInitialized` | Multiplayer level started |
+| `HeartbeatReceiver` | Heartbeats to shown sign of life for game |
 
-After 15 minutes of no events the Rich Presence is cleared automatically.
+After 1 minute of no events the Rich Presence is cleared automatically.
