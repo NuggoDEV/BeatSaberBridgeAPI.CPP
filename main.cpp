@@ -520,7 +520,7 @@ void httpServer() {
 
                 auto json = nlohmann::json::parse(body);
 
-                std::cout << json.dump(4) << std::endl;
+                std::cout << json << std::endl;
 
                 EventData event;
                 event.type = json["type"];
@@ -903,14 +903,31 @@ int main(int argc, char* argv[]) {
         std::cout << "[" << EnumToString(severity) << "] " << message << std::endl;
     }, discordpp::LoggingSeverity::Verbose);
 
+    std::function<void()> doAuthorize;
+
     // Set up status callback to monitor client connection
-    client->SetStatusChangedCallback([client](discordpp::Client::Status status, discordpp::Client::Error error, int32_t errorDetail) {
+    client->SetStatusChangedCallback([client, &doAuthorize](discordpp::Client::Status status, discordpp::Client::Error error, int32_t errorDetail) {
         std::cout << "🔄 Status changed: " << discordpp::Client::StatusToString(status) << std::endl;
 
         if (status == discordpp::Client::Status::Ready) {
             std::cout << "✅ Discord client is ready!\n";
         } else if (error != discordpp::Client::Error::None) {
             std::cerr << "❌ Connection error: " << discordpp::Client::ErrorToString(error) << " (detail: " << errorDetail << ")" << std::endl;
+        }
+
+        if (status == discordpp::Client::Status::Disconnected &&
+            error == discordpp::Client::Error::UnexpectedClose) {
+            try {
+                fs::path p = getTokenFilePath();
+                if (fs::exists(p)) {
+                    fs::remove(p);
+                    std::cout << "🧹 Removed stale Discord auth token after invalid-session disconnect.\n";
+                }
+            } catch (...) {}
+
+            if (doAuthorize) {
+                doAuthorize();
+            }
         }
     });
 
@@ -932,7 +949,6 @@ int main(int argc, char* argv[]) {
         } catch (...) {}
     };
 
-    std::function<void()> doAuthorize;
     doAuthorize = [&]() {
         client->Authorize(args, [client, codeVerifier, &doAuthorize](auto result, auto code, auto redirectUri) {
             if (!result.Successful()) {
