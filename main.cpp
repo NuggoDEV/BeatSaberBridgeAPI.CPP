@@ -514,14 +514,11 @@ void httpServer() {
     app.registerHandler("/sendData",
         [](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             try {
-                std::cout << "=== /sendData ===\n";
-                std::cout << "Method: " << req->getMethodString() << '\n';
-                std::cout << "Path: " << req->path() << '\n';
-                std::cout << "Body size: " << req->body().size() << '\n';
-                std::cout << "Content-Type: "
-                        << req->getHeader("Content-Type") << '\n';
-                std::cout << "Content-Length: "
-                        << req->getHeader("Content-Length") << '\n';
+                std::cerr << "A\n";
+
+                auto path = req->path();
+
+                std::cerr << "B\n";
 
                 auto body = req->body();
 
