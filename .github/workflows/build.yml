@@ -180,14 +180,14 @@ jobs:
           $testDir = New-Item -ItemType Directory -Path (Join-Path `
             ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()))
           Copy-Item dist\* $testDir\
-          #try {
-          #  & "$testDir\BeatSaberBridgeAPI.exe" --self-test
-          #  if ($LASTEXITCODE -ne 0) {
-          #    Write-Warning "Windows self-test exited with code $LASTEXITCODE; skipping it and continuing build."
-          #  }
-          #} catch {
-          #  Write-Warning "Windows self-test failed to start or hung; skipping it and continuing build."
-          #}
+          try {
+            & "$testDir\BeatSaberBridgeAPI.exe" --self-test
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Windows self-test exited with code $LASTEXITCODE; skipping it and continuing build."
+            }
+          } catch {
+            Write-Warning "Windows self-test failed to start or hung; skipping it and continuing build."
+          }
 
           Compress-Archive -Path dist\* -DestinationPath BeatSaberBridgeAPI-windows.zip
 
