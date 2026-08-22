@@ -7,18 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Fetch external libraries
 include(FetchContent)
 
-# Fetch Drogon
-FetchContent_Declare(drogon
-  GIT_REPOSITORY https://github.com/drogonframework/drogon.git
-  GIT_TAG v1.9.10
-)
-
-# Fetch Jsoncpp for Drogon's required dependency chain
-FetchContent_Declare(jsoncpp
-  GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
-  GIT_TAG 1.9.5
-)
-
 # Fetch nlohmann/json
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
