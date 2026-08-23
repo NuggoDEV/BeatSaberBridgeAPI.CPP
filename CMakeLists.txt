@@ -7,18 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Fetch external libraries
 include(FetchContent)
 
-# Fetch Drogon
-FetchContent_Declare(drogon
-  GIT_REPOSITORY https://github.com/drogonframework/drogon.git
-  GIT_TAG v1.9.10
-)
-
-# Fetch Jsoncpp for Drogon's required dependency chain
-FetchContent_Declare(jsoncpp
-  GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
-  GIT_TAG 1.9.5
-)
-
 # Fetch nlohmann/json
 FetchContent_Declare(json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -34,9 +22,7 @@ set(BUILD_MYSQL OFF CACHE BOOL "" FORCE)
 set(BUILD_SQLITE OFF CACHE BOOL "" FORCE)
 set(BUILD_REDIS OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(jsoncpp)
-list(APPEND CMAKE_PREFIX_PATH "${jsoncpp_BINARY_DIR}")
-FetchContent_MakeAvailable(drogon json)
+FetchContent_MakeAvailable(json)
 
 if(APPLE)
     set(RPATH_ORIGIN "@executable_path")
@@ -46,7 +32,23 @@ endif()
 
 if(WIN32)
     find_package(libzip CONFIG REQUIRED)
+    find_package(Drogon CONFIG REQUIRED)
+    find_package(jsoncpp CONFIG REQUIRED)
 else()
+    FetchContent_Declare(drogon
+      GIT_REPOSITORY https://github.com/drogonframework/drogon.git
+      GIT_TAG v1.9.10
+    )
+
+    FetchContent_Declare(jsoncpp
+      GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
+      GIT_TAG 1.9.5
+    )
+
+    FetchContent_MakeAvailable(jsoncpp)
+    list(APPEND CMAKE_PREFIX_PATH "${jsoncpp_BINARY_DIR}")
+    FetchContent_MakeAvailable(drogon)
+
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBZIP REQUIRED IMPORTED_TARGET libzip)
 endif()
@@ -70,24 +72,21 @@ set_target_properties(BeatSaberBridgeAPI.CPP PROPERTIES
 
 # Link the external libraries
 # Drogon creates the target name "drogon" when added via FetchContent, not the installed-package alias "Drogon::Drogon".
-target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE nlohmann_json::nlohmann_json OpenSSL::SSL OpenSSL::Crypto drogon)
+target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE
+    nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+
+if(WIN32)
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE Drogon::Drogon)
+else()
+    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE drogon)
+endif()
 
 # jsoncpp can expose different target names depending on build options (shared/static/object)
 # Prefer the namespaced target if available, otherwise fall back to the concrete targets or
 # the JSONCPP_LIBRARIES variable discovered by a Find module.
-if(TARGET JsonCpp::JsonCpp)
-    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE JsonCpp::JsonCpp)
-elseif(TARGET jsoncpp_lib)
-    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_lib)
-elseif(TARGET jsoncpp_static)
-    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_static)
-elseif(TARGET jsoncpp_object)
-    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE jsoncpp_object)
-elseif(DEFINED JSONCPP_LIBRARIES)
-    target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE ${JSONCPP_LIBRARIES})
-else()
-    message(WARNING "jsoncpp target not found; linking may fail")
-endif()
 
 if(WIN32)
     target_link_libraries(BeatSaberBridgeAPI.CPP PRIVATE libzip::zip)
