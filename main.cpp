@@ -373,7 +373,7 @@ void httpServer() {
             auto res = drogon::HttpResponse::newHttpResponse();
             res->setStatusCode(drogon::HttpStatusCode::k200OK);
             res->setContentTypeString("application/json");
-            res->setBody(nlohmann::json({{"version", "v0.1.6"}}).dump());
+            res->setBody(nlohmann::json({{"version", "v0.1.8"}}).dump());
             callback(res);
         },
         {drogon::Get}
