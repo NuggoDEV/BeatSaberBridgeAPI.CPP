@@ -15,7 +15,7 @@ TMP_DIR="$(mktemp -d)"
 # the downloaded archive has not been tampered with.
 SDK_SHA256=$(tr -d '[:space:]' < "$(dirname "$0")/sdk-sha256.txt")
 
-ASSET_NAME="DiscordSocialSdk-1.9.15332.zip"
+ASSET_NAME="DiscordSocialSdk-1.10.18687.zip"
 DOWNLOAD_URL="${SDK_DOWNLOAD_URL:?SDK_DOWNLOAD_URL is not set}"
 DOWNLOAD_TOKEN="${SDK_DOWNLOAD_TOKEN:?SDK_DOWNLOAD_TOKEN is not set}"
 
