@@ -196,7 +196,10 @@ void signalHandler(int signum) {
 
 // Helper function to get current Unix timestamp
 long long getCurrentTimestamp() {
-    return std::chrono::system_clock::now().time_since_epoch().count() / 1000;
+    auto res = std::chrono::system_clock::now().time_since_epoch().count() / 1000;
+    std::cout << res << std::endl;
+
+    return res / 1000;
 }
 
 // Helper function to join mappers
