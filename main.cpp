@@ -198,8 +198,7 @@ void signalHandler(int signum) {
 long long getCurrentTimestamp() {
     auto res = std::chrono::system_clock::now().time_since_epoch().count() / 1000;
     std::cout << res << std::endl;
-
-    return res / 1000;
+    return res;
 }
 
 // Helper function to join mappers
@@ -632,8 +631,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + "Mapped by " + joinMappers(data.mappers));
 
                     discordpp::ActivityTimestamps timestamps;
-                    timestamps.SetStart(currentTime * 1000);  // Convert to milliseconds
-                    timestamps.SetEnd(endTime * 1000);
+                    timestamps.SetStart(currentTime);  // Convert to milliseconds
+                    timestamps.SetEnd(endTime);
                     activity.SetTimestamps(timestamps);
 
                     updatePresence(client, activity, "quest", "Meta Quest");
