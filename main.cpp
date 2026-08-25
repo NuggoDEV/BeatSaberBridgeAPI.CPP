@@ -756,8 +756,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                             if (remaining < 0) remaining = 0;
                             long long now = getCurrentTimestamp();
                             discordpp::ActivityTimestamps timestamps;
-                            timestamps.SetStart(now * 1000);
-                            timestamps.SetEnd(static_cast<long long>((now + static_cast<long long>(std::round(remaining))) * 1000));
+                            timestamps.SetStart(now);
+                            timestamps.SetEnd(static_cast<long long>(now + static_cast<long long>(std::round(remaining))));
                             activity.SetTimestamps(timestamps);
                         }
                     } catch (...) {
@@ -778,8 +778,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     activity.SetDetails(data.metadata["author"] + " - " + data.metadata["title"] + " | " + joinMappers(data.mappers));
 
                     discordpp::ActivityTimestamps timestamps;
-                    timestamps.SetStart(currentTime * 1000);
-                    timestamps.SetEnd(endTime * 1000);
+                    timestamps.SetStart(currentTime);
+                    timestamps.SetEnd(endTime);
                     activity.SetTimestamps(timestamps);
 
                     // Schedule the presence update asynchronously to avoid blocking the worker
