@@ -196,7 +196,7 @@ void signalHandler(int signum) {
 
 // Helper function to get current Unix timestamp
 long long getCurrentTimestamp() {
-    auto res = std::chrono::system_clock::now().time_since_epoch().count() / 1000;
+    auto res = std::chrono::system_clock::now().time_since_epoch().count() / 10000;
     std::cout << res << std::endl;
     return res;
 }
@@ -708,8 +708,8 @@ void rpcWorker(std::shared_ptr<discordpp::Client> client) {
                     activity.SetDetails(currentSongData["author"].get<std::string>() + " - " + currentSongData["title"].get<std::string>() + " | " + "Mapped by " + currentSongData["mappers"].get<std::string>());
 
                     discordpp::ActivityTimestamps timestamps;
-                    timestamps.SetStart(currentTime * 1000);  // Convert to milliseconds
-                    timestamps.SetEnd(endTime * 1000);
+                    timestamps.SetStart(currentTime);  // Convert to milliseconds
+                    timestamps.SetEnd(endTime);
                     activity.SetTimestamps(timestamps);
 
                     updatePresence(client, activity, "quest", "Meta Quest");
