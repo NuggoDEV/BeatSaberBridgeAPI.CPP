@@ -101,6 +101,7 @@ The script downloads the zip, verifies its SHA-256 against the hash in `scripts/
 
 4. **Add to your fork** under **Settings → Secrets and variables → Actions:**
    - Under **Variables**: add `SDK_DOWNLOAD_URL` — the release asset download URL, e.g. `https://github.com/you/discord-sdk-assets/releases/download/v1.9.15332/DiscordSocialSdk-1.9.15332.zip`
+   - Under **Variables**: add `SDK_ASSET_NAME` — the release asset name, e.g. `DiscordSocialSdk-1.9.15332.zip`
    - Under **Secrets**: add `SDK_DOWNLOAD_TOKEN` — the PAT from the previous step
 
 5. **Update `scripts/sdk-sha256.txt`** if you are using a different SDK version. Compute the SHA-256 of your zip:
