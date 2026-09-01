@@ -18,7 +18,7 @@ DOWNLOAD_TOKEN="${SDK_DOWNLOAD_TOKEN:?SDK_DOWNLOAD_TOKEN is not set}"
 # Discord Developer Portal. Used as both the cache key in CI and to verify
 # the downloaded archive has not been tampered with.
 # ASSET_NAME:0:-4 deletes the last 4 characters from the string ".zip"
-SDK_SHA256=$(tr -d '[:space:] [:lower:]' < "$(dirname "$0")/${ASSET_NAME:0:-4}-sha256.txt")
+SDK_SHA256=$(tr -d '[:space:]' < "$(dirname "$0")/${ASSET_NAME:0:-4}-sha256.txt")
 
 # Parse a GitHub release asset browser URL into an API assets URL.
 # Input:  https://github.com/{owner}/{repo}/releases/download/{tag}/{filename}
